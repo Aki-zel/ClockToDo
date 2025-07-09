@@ -20,6 +20,7 @@ class ClockToDoApp:
     def __init__(self, root):
         self.root = root
         self.root.title('ClockToDo')
+        self.root.iconbitmap('clockToDo.ico')
         self.tasks = []
         self.load_data()
         self.current_task = None
