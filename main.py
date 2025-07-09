@@ -269,8 +269,11 @@ class ClockToDoApp:
                     elif period_type == 'year':
                         if start.year == now.year:
                             total += duration
-            labels.append(task['name'])
-            values.append(round(total/3600, 4))
+                    hours = round(total / 3600, 4)
+                    if hours > 0:
+                        labels.append(task['name'])
+                        values.append(hours)
+
         if all(v == 0 for v in values):
             if force_day:
                 msg = f'{force_day} 暂无计时记录'
