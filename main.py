@@ -269,27 +269,25 @@ class ClockToDoApp:
                     duration = int(float(rec['duration']))
                 except Exception:
                     continue
+
                 if force_day:
-                    # 只显示选中日期的记录
                     if start.strftime('%Y-%m-%d') == force_day:
                         total += duration
                 else:
-                    if period_type == 'day':
-                        if start.date() == now.date():
-                            total += duration
-                    elif period_type == 'week':
-                        if start.isocalendar()[1] == now.isocalendar()[1] and start.isocalendar()[0] == now.isocalendar()[0]:
-                            total += duration
-                    elif period_type == 'month':
-                        if start.month == now.month and start.year == now.year:
-                            total += duration
-                    elif period_type == 'year':
-                        if start.year == now.year:
-                            total += duration
-                    hours = round(total / 3600, 4)
-                    if hours > 0:
-                        labels.append(task['name'])
-                        values.append(hours)
+                    if period_type == 'day' and start.date() == now.date():
+                        total += duration
+                    elif period_type == 'week' and start.isocalendar()[:2] == now.isocalendar()[:2]:
+                        total += duration
+                    elif period_type == 'month' and start.month == now.month and start.year == now.year:
+                        total += duration
+                    elif period_type == 'year' and start.year == now.year:
+                        total += duration
+
+            hours = round(total / 3600, 4)
+            if hours > 0:
+                labels.append(task['name'])
+                values.append(hours)
+
 
         if all(v == 0 for v in values):
             if force_day:
