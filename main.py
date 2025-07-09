@@ -26,6 +26,8 @@ def resource_path(relative_path):
 class ClockToDoApp:
     def __init__(self, root):
         self.root = root
+        self.root.resizable(False, False)
+        self.pastel_colors = PASTEL_COLORS
         self.root.title('ClockToDo')
         icon_path = resource_path("clockToDo.ico")
         self.root.iconbitmap(icon_path)
@@ -47,7 +49,6 @@ class ClockToDoApp:
             color = f'#f7f7f7' if i < h//2 else f'#ffe4b2'
             bg_canvas.create_line(0, i, w, i, fill=color)
         self.root.lift()  # 保证控件在canvas之上
-        self.root.resizable(True, True)  # 允许窗口拉伸
         main_frame = tk.Frame(self.root, highlightthickness=0)
         main_frame.grid(row=0, column=0, sticky='nsew')
         self.root.grid_rowconfigure(0, weight=1)
@@ -149,7 +150,7 @@ class ClockToDoApp:
         for i in self.task_tree.get_children():
             self.task_tree.delete(i)
         n = len(self.tasks)
-        pastel = PASTEL_COLORS
+        pastel = self.pastel_colors
         while len(pastel) < n:
             pastel = pastel * 2
         for idx, task in enumerate(self.tasks):
@@ -241,7 +242,7 @@ class ClockToDoApp:
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
         import matplotlib
         import matplotlib.pyplot as plt
-        import numpy as np  # 新增
+        import numpy as np
         matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'sans-serif']
         matplotlib.rcParams['axes.unicode_minus'] = False
         PERIODS = [
@@ -251,9 +252,10 @@ class ClockToDoApp:
             ('本年', 'year')
         ]
 
-        # 清理旧图
+        # 清理旧图表控件
         for widget in self.stats_canvas_frame.winfo_children():
             widget.destroy()
+
         self.stats_fig = plt.Figure(figsize=(5, 5), dpi=100)
         ax = self.stats_fig.add_subplot(111)
         period_map = dict(PERIODS)
@@ -261,6 +263,7 @@ class ClockToDoApp:
         now = datetime.now()
         labels = []
         values = []
+
         for task in self.tasks:
             total = 0
             for rec in task.get('records', []):
@@ -288,34 +291,31 @@ class ClockToDoApp:
                 labels.append(task['name'])
                 values.append(hours)
 
-
         if all(v == 0 for v in values):
-            if force_day:
-                msg = f'{force_day} 暂无计时记录'
-            else:
-                msg = '该周期暂无计时记录'
+            msg = f'{force_day} 暂无计时记录' if force_day else '该周期暂无计时记录'
             tk.Label(self.stats_canvas_frame, text=msg, font=('微软雅黑', 12), fg='#e06666').pack()
             return
-        # 下移饼图本身，为标题和饼图留出更大间隔
+
         self.stats_fig.subplots_adjust(top=0.78, bottom=0.08)
-        # 1. 生成高效浅色系配色
-        pastel_colors = PASTEL_COLORS
-        while len(pastel_colors) < len(labels):
-            pastel_colors = pastel_colors * 2
-        pastel_colors = pastel_colors[:len(labels)]
-        # 2. 清理旧表格
-        if hasattr(self, 'stats_table') and self.stats_table:
-            self.stats_table.destroy()
-        # 3. 绘制饼图，使用浅色系
+
+        # --- 颜色映射字典（任务名→颜色） ---
+        self.task_color_map = {}
+        n_colors = len(self.pastel_colors)
+        for i, task in enumerate(self.tasks):
+            self.task_color_map[task['name']] = self.pastel_colors[i % n_colors]
+
+        # 饼图颜色对应labels
+        pie_colors = [self.task_color_map.get(name, '#cccccc') for name in labels]
+
         wedges, _ = ax.pie(
             values,
             labels=None,
             startangle=90,
-            labeldistance=1.10,
             wedgeprops={'linewidth': 1, 'edgecolor': 'white'},
-            colors=pastel_colors[:len(labels)]
+            colors=pie_colors
         )
-        # 在饼图内部显示计划名称，字体大小自适应，过小不显示
+
+        import matplotlib.pyplot as plt
         for i, wedge in enumerate(wedges):
             ang = (wedge.theta2 + wedge.theta1) / 2.
             angle_span = wedge.theta2 - wedge.theta1
@@ -323,9 +323,8 @@ class ClockToDoApp:
             x = r * np.cos(np.deg2rad(ang))
             y = r * np.sin(np.deg2rad(ang))
             if angle_span < 15:
-                continue  # 小扇形不显示名称，外部注释时处理
+                continue
             fontsize = int(10 + 4 * min(angle_span, 60) / 60)
-            # 修正：下半部分文字不倒置
             display_ang = ang
             if 90 < (ang % 360) < 270:
                 display_ang += 180
@@ -335,7 +334,7 @@ class ClockToDoApp:
                 fontsize=fontsize, color='#333', fontweight='bold',
                 rotation=display_ang, rotation_mode='default'
             )
-        # 在外部添加小时数注释（小扇形合并任务名，大扇形只显示小时）
+
         for i, (wedge, value) in enumerate(zip(wedges, values)):
             ang = (wedge.theta2 + wedge.theta1) / 2.
             angle_span = wedge.theta2 - wedge.theta1
@@ -357,18 +356,19 @@ class ClockToDoApp:
                 ),
                 bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#ccc', lw=0.5, alpha=0.8)
             )
-        if force_day:
-            ax.set_title(f'{force_day} 各任务专注时间（小时）', fontsize=14, pad=30)
-        else:
-            ax.set_title(f'{self.stats_period}各任务累计专注时间（小时）', fontsize=14, pad=30)
+
+        title_text = f'{force_day} 各任务专注时间（小时）' if force_day else f'{self.stats_period}各任务累计专注时间（小时）'
+        ax.set_title(title_text, fontsize=14, pad=30)
+
         self.stats_canvas = FigureCanvasTkAgg(self.stats_fig, master=self.stats_canvas_frame)
         self.stats_canvas.draw()
         self.stats_canvas.get_tk_widget().pack()
-        # 4. 在饼图下方添加美化表格
+
+        # --- 统计表（示例为两个表格，带滚动条，3行可视） ---
         import tkinter.ttk as ttk
         style = ttk.Style()
         style.theme_use('default')
-        main_bg = pastel_colors[0]
+        main_bg = '#fffbe6'
         style.configure('Custom.Treeview',
             background=main_bg,
             fieldbackground=main_bg,
@@ -385,49 +385,68 @@ class ClockToDoApp:
             relief='flat',
         )
         style.map('Custom.Treeview', background=[], foreground=[])
-        for idx, color in enumerate(pastel_colors[:len(labels)]):
-            tag_name = f'rowcolor{idx}'
-            style.configure(f'{tag_name}.Custom.Treeview', background=color)
-        # 只显示3行，支持下滑
+
+        # 清理旧表格和滚动条（避免重复创建）
+        for attr in ['stats_table_left', 'stats_table_right', 'scrollbar_left', 'scrollbar_right']:
+            if hasattr(self, attr) and getattr(self, attr):
+                getattr(self, attr).destroy()
+
         table_frame = tk.Frame(self.stats_canvas_frame)
         table_frame.pack(side=tk.BOTTOM, fill='x', pady=(10, 0))
-        self.stats_table = ttk.Treeview(
-            table_frame,
-            columns=('计划1', '小时1', '计划2', '小时2'),
+
+        # 左侧框架
+        left_frame = tk.Frame(table_frame)
+        left_frame.pack(side=tk.LEFT, fill='y', expand=True, padx=(0,10))
+        self.stats_table_left = ttk.Treeview(
+            left_frame,
+            columns=('计划', '累计小时'),
             show='headings',
             height=3,
             style='Custom.Treeview',
             selectmode='none'
         )
-        self.stats_table.heading('计划1', text='计划')
-        self.stats_table.heading('小时1', text='累计小时')
-        self.stats_table.heading('计划2', text='计划')
-        self.stats_table.heading('小时2', text='累计小时')
-        self.stats_table.column('计划1', width=110, anchor='center')
-        self.stats_table.column('小时1', width=70, anchor='center')
-        self.stats_table.column('计划2', width=110, anchor='center')
-        self.stats_table.column('小时2', width=70, anchor='center')
-        # 插入数据：每行两个计划
-        n = len(labels)
-        for row in range(0, n, 2):
-            name1 = labels[row]
-            hour1 = f'{values[row]:.2f}'
-            tag1 = f'rowcolor{row}'
-            if row+1 < n:
-                name2 = labels[row+1]
-                hour2 = f'{values[row+1]:.2f}'
-                tag2 = f'rowcolor{row+1}'
-            else:
-                name2 = ''
-                hour2 = ''
-                tag2 = ''
-            tags = (tag1, tag2) if tag2 else (tag1,)
-            self.stats_table.insert('', 'end', values=(name1, hour1, name2, hour2), tags=tags)
-            self.stats_table.tag_configure(tag1, background=pastel_colors[row])
-            if tag2:
-                self.stats_table.tag_configure(tag2, background=pastel_colors[row+1])
-        # 不添加垂直滚动条，只显示3行
-        self.stats_table.pack(side=tk.LEFT, fill='x', expand=True)
+        self.stats_table_left.heading('计划', text='计划')
+        self.stats_table_left.heading('累计小时', text='累计小时')
+        self.stats_table_left.column('计划', width=150, anchor='center')
+        self.stats_table_left.column('累计小时', width=100, anchor='center')
+        self.stats_table_left.pack(side=tk.LEFT, fill='both', expand=True)
+
+
+        # 右侧框架
+        right_frame = tk.Frame(table_frame)
+        right_frame.pack(side=tk.LEFT, fill='y', expand=True)
+        self.stats_table_right = ttk.Treeview(
+            right_frame,
+            columns=('计划', '累计小时'),
+            show='headings',
+            height=3,
+            style='Custom.Treeview',
+            selectmode='none'
+        )
+        self.stats_table_right.heading('计划', text='计划')
+        self.stats_table_right.heading('累计小时', text='累计小时')
+        self.stats_table_right.column('计划', width=150, anchor='center')
+        self.stats_table_right.column('累计小时', width=100, anchor='center')
+        self.stats_table_right.pack(side=tk.LEFT, fill='both', expand=True)
+
+
+        # 任务索引分配
+        left_indices = [i for i in range(len(labels)) if i % 2 == 0]
+        right_indices = [i for i in range(len(labels)) if i % 2 == 1]
+
+        # 插入左表数据，颜色对应
+        for i in left_indices:
+            tag = f'rowcolor_left_{i}'
+            color = self.task_color_map.get(labels[i], '#cccccc')
+            self.stats_table_left.insert('', 'end', values=(labels[i], f'{values[i]:.2f}'), tags=(tag,))
+            self.stats_table_left.tag_configure(tag, background=color)
+
+        # 插入右表数据，颜色对应
+        for i in right_indices:
+            tag = f'rowcolor_right_{i}'
+            color = self.task_color_map.get(labels[i], '#cccccc')
+            self.stats_table_right.insert('', 'end', values=(labels[i], f'{values[i]:.2f}'), tags=(tag,))
+            self.stats_table_right.tag_configure(tag, background=color)
 
     def load_data(self):
         if os.path.exists(DATA_FILE):
