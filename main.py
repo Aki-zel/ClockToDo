@@ -110,8 +110,8 @@ class ClockToDoApp:
                              font=('微软雅黑', 12),
                              )
         task_style.map('Task.Treeview',
-                       background=[('selected', '#ffd966')],
-                       foreground=[('selected', '#d35400')]
+                       background=[('selected', "#000000")],
+                       foreground=[('selected', "#ffffff")]
                        )
         self.task_tree_frame = tk.Frame(
             left_frame, bg='#fdf6e3', highlightthickness=0, bd=0)
