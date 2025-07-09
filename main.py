@@ -5,8 +5,9 @@ import sys
 import os
 import time
 from datetime import datetime
+import zstandard as zstd
 
-DATA_FILE = 'todo.json'
+DATA_FILE = 'todo.json.zst'
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
@@ -448,17 +449,28 @@ class ClockToDoApp:
             self.stats_table_right.insert('', 'end', values=(labels[i], f'{values[i]:.2f}'), tags=(tag,))
             self.stats_table_right.tag_configure(tag, background=color)
 
+    def save_data(self):
+        try:
+            cctx = zstd.ZstdCompressor()
+            data = json.dumps(self.tasks, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            compressed = cctx.compress(data)
+            with open(DATA_FILE, 'wb') as f:
+                f.write(compressed)
+        except Exception as e:
+            messagebox.showerror('保存错误', f'保存数据失败：{e}')
+
     def load_data(self):
         if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                self.tasks = json.load(f)
+            try:
+                dctx = zstd.ZstdDecompressor()
+                with open(DATA_FILE, 'rb') as f:
+                    decompressed = dctx.decompress(f.read())
+                    self.tasks = json.loads(decompressed.decode('utf-8'))
+            except Exception as e:
+                messagebox.showerror('读取错误', f'读取数据失败：{e}')
+                self.tasks = []
         else:
             self.tasks = []
-
-    def save_data(self):
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(self.tasks, f, ensure_ascii=False, indent=2)
-
 def main():
     root = tk.Tk()
     app = ClockToDoApp(root)
