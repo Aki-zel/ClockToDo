@@ -4,7 +4,6 @@ import json
 import os
 import time
 from datetime import datetime
-from stats import show_stats
 
 DATA_FILE = 'todo.json'
 
@@ -231,9 +230,18 @@ class ClockToDoApp:
 
     def show_statistics(self, force_day=None):
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        import matplotlib
         import matplotlib.pyplot as plt
         import numpy as np  # 新增
-        from stats import PERIODS
+        matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'sans-serif']
+        matplotlib.rcParams['axes.unicode_minus'] = False
+        PERIODS = [
+            ('今日', 'day'),
+            ('本周', 'week'),
+            ('本月', 'month'),
+            ('本年', 'year')
+        ]
+
         # 清理旧图
         for widget in self.stats_canvas_frame.winfo_children():
             widget.destroy()
