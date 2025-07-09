@@ -503,12 +503,21 @@ class ClockToDoApp:
     def save_data(self):
         try:
             compressed_file, json_file = self.get_file_pair(DATA_FILE)
+
+            # 序列化任务数据为 JSON 字符串
+            json_str = json.dumps(self.tasks, ensure_ascii=False, separators=(',', ':'))
+            data = json_str.encode('utf-8')
+
+            # 保存压缩数据（.zst）
             cctx = zstd.ZstdCompressor()
-            data = json.dumps(self.tasks, ensure_ascii=False,
-                              separators=(',', ':')).encode('utf-8')
             compressed = cctx.compress(data)
             with open(compressed_file, 'wb') as f:
                 f.write(compressed)
+
+            # 同时保存未压缩 JSON 文件
+            with open(json_file, 'w', encoding='utf-8') as f:
+                f.write(json_str)
+
         except Exception as e:
             messagebox.showerror('保存错误', f'保存数据失败：{e}')
 
