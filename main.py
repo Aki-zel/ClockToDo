@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 import json
+import sys
 import os
 import time
 from datetime import datetime
@@ -14,12 +15,20 @@ PASTEL_COLORS = [
     '#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae',
     '#f1e2cc', '#cccccc'
 ]
+def resource_path(relative_path):
+    """获取资源文件绝对路径，兼容 PyInstaller 打包后运行环境"""
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class ClockToDoApp:
     def __init__(self, root):
         self.root = root
         self.root.title('ClockToDo')
-        self.root.iconbitmap('clockToDo.ico')
+        icon_path = resource_path("clockToDo.ico")
+        self.root.iconbitmap(icon_path)
         self.tasks = []
         self.load_data()
         self.current_task = None

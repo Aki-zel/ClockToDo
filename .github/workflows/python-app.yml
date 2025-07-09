@@ -29,7 +29,7 @@ jobs:
 
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller -F -w -i clockToDo.ico main.py --add-data "todo.json;." --add-data "clockToDo.ico;." --name ClockToDo
+        pyinstaller -F -w -i clockToDo.ico main.py  --add-data "clockToDo.ico;." --name ClockToDo
 
     - name: Upload EXE as artifact
       uses: actions/upload-artifact@v4

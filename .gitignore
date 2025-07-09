@@ -1,6 +1,5 @@
 .vscode
 build
-.github
 __pycache__
 main.spec
 dist
