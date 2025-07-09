@@ -1,0 +1,47 @@
+name: Build ClockToDo EXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # 仅在推送 v1.0.0 这类 tag 时触发打包
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller -F -w -i clockToDo.ico main.py ^
+          --add-data "todo.json;." ^
+          --add-data "stats.py;." ^
+          --name ClockToDo
+
+    - name: Upload EXE as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ClockToDo.exe
+        path: dist/ClockToDo.exe
+
+    - name: Create GitHub Release and upload EXE
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: "ClockToDo ${{ github.ref_name }}"
+        files: dist/ClockToDo.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
