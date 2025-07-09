@@ -1,6 +1,6 @@
-# ClockToDo 番茄工作法任务管理器
+# ClockToDo 类似于番茄ToDo
 
-ClockToDo 是一款基于 Python 的桌面番茄工作法 ToDo 管理软件，集任务管理、专注计时、数据统计与可视化于一体，界面美观，操作便捷。
+ClockToDo 是一款基于 Python 的桌面番茄 ToDo 管理软件，集任务管理、专注计时、数据统计与可视化于一体，界面美观，操作便捷。
 
 ## 主要功能
 
