@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 import zstandard as zstd
 
-DATA_FILE = 'todo.json.zst'
+DATA_FILE = 'todo.json'
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
