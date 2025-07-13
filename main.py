@@ -319,7 +319,7 @@ class ClockToDoApp:
                      font=('微软雅黑', 12), fg='#e06666').pack()
             return
 
-        self.stats_fig.subplots_adjust(top=0.78, bottom=0.08)
+        self.stats_fig.subplots_adjust(top=0.85, bottom=0.08)
 
         # --- 颜色映射字典（任务名→颜色） ---
         self.task_color_map = {}
@@ -359,13 +359,12 @@ class ClockToDoApp:
                 fontsize=fontsize, color='#333', fontweight='bold',
                 rotation=display_ang, rotation_mode='default'
             )
-
+        sum_values=sum(values)
         for i, (wedge, value) in enumerate(zip(wedges, values)):
             ang = (wedge.theta2 + wedge.theta1) / 2.
             angle_span = wedge.theta2 - wedge.theta1
             x = np.cos(np.deg2rad(ang))
             y = np.sin(np.deg2rad(ang))
-
             hours = int(value)
             minutes = int(round((value - hours) * 60))
             time_str = f"{hours}小时" + (f"{minutes}分钟" if minutes > 0 else "")
@@ -388,7 +387,12 @@ class ClockToDoApp:
                 bbox=dict(boxstyle='round,pad=0.2', fc='white',
                           ec='#ccc', lw=0.5, alpha=0.8)
             )
-
+        sum_hours = int(sum_values)
+        sum_minutes = int(round((sum_values - sum_hours ) * 60))
+        sum_time_str = f"{sum_hours}小时" + (f"{sum_minutes}分钟" if sum_minutes > 0 else "")
+        ax.text(0, -1.45, f'累计专注时间：{sum_time_str}',
+                ha='center', va='center',
+                fontsize=12, color='#d35400', fontweight='bold')
         title_text = f'{force_day} 各任务专注时间（小时）' if force_day else f'{self.stats_period}各任务累计专注时间（小时）'
         ax.set_title(title_text, fontsize=14, pad=30)
 
