@@ -413,7 +413,8 @@ class ClockToDoApp:
             for bar in bars:
                 yval = bar.get_height()
                 if yval > 0:
-                    ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f}h', va='bottom', ha='center', fontsize=9)
+                    hours,minutes = int(yval), int(round((yval - int(yval)) * 60))
+                    ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{hours}h{minutes}m', va='bottom', ha='center', fontsize=9)
         
         else: # 非'今日'且非force_day的周期性图表
             plot_color = '#6fa8dc' # 默认颜色
@@ -456,11 +457,12 @@ class ClockToDoApp:
             x_labels = list(data.keys())
             y_values = list(data.values())
             ax.plot(x_labels, y_values, marker='o', linestyle='-', color=plot_color)
-            
+            offset = max(y_values) * 0.01
             # **功能增强**: 添加数据注释
             for x, y in zip(x_labels, y_values):
                 if y > 0:
-                    ax.text(x, y, f' {y:.2f}h', va='bottom', ha='left' if str(x)[0] != 'W' else 'center', fontsize=9)
+                    hours,minutes = int(y), int(round((y - int(y)) * 60))
+                    ax.text(x, y+offset, f' {hours}h{minutes}m', va='bottom', ha='left' if str(x)[0] != 'W' else 'center', fontsize=9)
             
             if self.stats_period == '本年' and sub_period_type == '按天':
                 ax.xaxis.set_major_locator(plt.MaxNLocator(8))
