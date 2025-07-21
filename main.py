@@ -4,10 +4,13 @@ import json
 import sys
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
+from matplotlib import pyplot as plt
 import zstandard as zstd
+import tkinter.ttk as ttk # 统一导入ttk
 
-DATA_FILE = 'todo.json'
+DATA_FILE = 'todo.json.zst'
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
@@ -33,40 +36,50 @@ class ClockToDoApp:
         self.root.resizable(False, False)
         self.pastel_colors = PASTEL_COLORS
         self.root.title('ClockToDo')
-        icon_path = resource_path("clockToDo.ico")
-        self.root.iconbitmap(icon_path)
+        try:
+            icon_path = resource_path("clockToDo.ico")
+            self.root.iconbitmap(icon_path)
+        except tk.TclError:
+            print("图标 'clockToDo.ico' 未找到，将使用默认图标。")
+
         self.tasks = []
         self.load_data()
         self.current_task = None
         self.timer_running = False
         self.start_time = None
-        self.stats_period = '今日'  # 新增：统计周期，默认今日
+        
+        self.stats_period = '今日'
+        self.chart_type_var = tk.StringVar(value='饼图')
+        self.sub_period_var = tk.StringVar(value='按天')
+
         self.build_ui()
 
     def build_ui(self):
-        # 设置主窗口渐变背景色（通过Canvas绘制）
+        # 设置主窗口渐变背景色
         self.root.update_idletasks()
         w, h = self.root.winfo_width() or 900, self.root.winfo_height() or 600
-        bg_canvas = tk.Canvas(self.root, width=w,
-                              height=h, highlightthickness=0)
+        bg_canvas = tk.Canvas(self.root, width=w, height=h, highlightthickness=0)
         bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
         for i in range(h):
             color = f'#f7f7f7' if i < h//2 else f'#ffe4b2'
             bg_canvas.create_line(0, i, w, i, fill=color)
-        self.root.lift()  # 保证控件在canvas之上
-        main_frame = tk.Frame(self.root, highlightthickness=0)
+        
+        main_frame = tk.Frame(self.root, highlightthickness=0, bg='#f7f7f7')
         main_frame.grid(row=0, column=0, sticky='nsew')
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         main_frame.grid_rowconfigure(0, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
         main_frame.grid_columnconfigure(1, weight=2)
+        
         # 左侧：任务与操作
-        left_frame = tk.Frame(main_frame, highlightthickness=0)
+        left_frame = tk.Frame(main_frame, highlightthickness=0, bg='#f7f7f7')
         left_frame.grid(row=0, column=0, sticky='ns', padx=(20, 10), pady=10)
+        
         title = tk.Label(left_frame, text='ClockToDo 任务管理',
-                         font=('微软雅黑', 18, 'bold'), fg='#d35400')
+                         font=('微软雅黑', 18, 'bold'), fg='#d35400', bg='#f7f7f7')
         title.pack(pady=(8, 8))
+        
         # 日历区
         self.selected_calendar_date = None
         try:
@@ -75,141 +88,141 @@ class ClockToDoApp:
             cal_frame.pack(pady=(0, 8))
             from tkcalendar import Calendar
             self.calendar = Calendar(
-                cal_frame,
-                selectmode='day',
-                date_pattern='yyyy-mm-dd',
-                font=('微软雅黑', 10),
-                background='#fff2cc',
-                disabledbackground='#f7f7f7',
-                bordercolor='#d35400',
-                headersbackground='#f6b26b',
-                normalbackground='#fff',
-                weekendbackground='#ffe4b2',
-                foreground='#333',
-                headersforeground='#d35400',
-                weekendforeground='#e06666',
-                selectforeground='#fff',
+                cal_frame, selectmode='day', date_pattern='yyyy-mm-dd',
+                font=('微软雅黑', 10), background='#fff2cc', disabledbackground='#f7f7f7',
+                bordercolor='#d35400', headersbackground='#f6b26b',
+                normalbackground='#fff', weekendbackground='#ffe4b2',
+                foreground='#333', headersforeground='#d35400',
+                weekendforeground='#e06666', selectforeground='#fff'
             )
             self.calendar.pack()
             self.calendar.bind('<<CalendarSelected>>', self.on_calendar_select)
         except ImportError:
             tk.Label(left_frame, text='(可选)安装tkcalendar以显示日历',
-                     font=('微软雅黑', 9), fg='#aaa').pack(pady=(0, 8))
-        tk.Label(left_frame, text='任务列表', font=(
-            '微软雅黑', 12), fg='#333').pack(anchor='w')
-        # 用ttk.Treeview替换Listbox实现任务列表
-        import tkinter.ttk as ttk
+                     font=('微软雅黑', 9), fg='#aaa', bg='#f7f7f7').pack(pady=(0, 8))
+            
+        tk.Label(left_frame, text='任务列表', font=('微软雅黑', 12), fg='#333', bg='#f7f7f7').pack(anchor='w')
+        
+        # 任务列表 Treeview
         task_style = ttk.Style()
         task_style.theme_use('default')
-        task_style.configure('Task.Treeview',
-                             background='#fdf6e3',
-                             fieldbackground='#fdf6e3',
-                             borderwidth=0,
-                             relief='flat',
-                             rowheight=28,
-                             font=('微软雅黑', 12),
-                             )
-        task_style.map('Task.Treeview',
-                       background=[('selected', "#000000")],
-                       foreground=[('selected', "#ffffff")]
-                       )
-        self.task_tree_frame = tk.Frame(
-            left_frame, bg='#fdf6e3', highlightthickness=0, bd=0)
+        task_style.configure('Task.Treeview', background='#fdf6e3', fieldbackground='#fdf6e3',
+                             borderwidth=0, relief='flat', rowheight=28, font=('微软雅黑', 12))
+        task_style.map('Task.Treeview', background=[('selected', "#d35400")], foreground=[('selected', "#ffffff")])
+        self.task_tree_frame = tk.Frame(left_frame, bg='#fdf6e3', highlightthickness=0, bd=0)
         self.task_tree_frame.pack(pady=4, fill='x')
         self.task_tree = ttk.Treeview(
-            self.task_tree_frame,
-            columns=(),
-            show='tree',  # 只显示内容，不显示表头
-            height=10,
-            style='Task.Treeview',
-            selectmode='browse'
+            self.task_tree_frame, columns=(), show='tree', height=10,
+            style='Task.Treeview', selectmode='browse'
         )
-        self.task_tree.column('#0', anchor='center',
-                              width=220, stretch=True)  # 让内容居中
-        self.task_tree.pack(fill='x', expand=True)
+        self.task_tree.column('#0', anchor='w', width=220, stretch=True)
+        self.task_tree.pack(fill='x', expand=True, padx=5, pady=5)
         self.refresh_task_list()
-        btn_frame = tk.Frame(left_frame)
+        
+        btn_frame = tk.Frame(left_frame, bg='#f7f7f7')
         btn_frame.pack(pady=8)
-        tk.Button(btn_frame, text='添加任务', font=('微软雅黑', 10), bg='#f6b26b', fg='white', width=12,
-                  command=self.add_task, relief='flat', activebackground='#ffd966').pack(side=tk.LEFT, padx=6)
-        tk.Button(btn_frame, text='删除任务', font=('微软雅黑', 10), bg='#e06666', fg='white', width=12,
-                  command=self.delete_task, relief='flat', activebackground='#f4cccc').pack(side=tk.LEFT, padx=6)
-        tk.Button(btn_frame, text='开始计时', font=('微软雅黑', 10), bg='#6fa8dc', fg='white', width=12,
-                  command=self.start_timer, relief='flat', activebackground='#cfe2f3').pack(side=tk.LEFT, padx=6)
-        tk.Button(btn_frame, text='结束计时', font=('微软雅黑', 10), bg='#b4a7d6', fg='white', width=12,
-                  command=self.stop_timer, relief='flat', activebackground='#d9d2e9').pack(side=tk.LEFT, padx=6)
-        self.timer_label = tk.Label(
-            left_frame, text='计时: 00:00:00', font=('微软雅黑', 16, 'bold'), fg='#3d85c6')
+        
+        # 操作按钮
+        tk.Button(btn_frame, text='添加任务', font=('微软雅黑', 10), bg='#f6b26b', fg='white', width=12, command=self.add_task, relief='flat', activebackground='#ffd966').pack(side=tk.LEFT, padx=6)
+        tk.Button(btn_frame, text='删除任务', font=('微软雅黑', 10), bg='#e06666', fg='white', width=12, command=self.delete_task, relief='flat', activebackground='#f4cccc').pack(side=tk.LEFT, padx=6)
+        tk.Button(btn_frame, text='开始计时', font=('微软雅黑', 10), bg='#6fa8dc', fg='white', width=12, command=self.start_timer, relief='flat', activebackground='#cfe2f3').pack(side=tk.LEFT, padx=6)
+        tk.Button(btn_frame, text='结束计时', font=('微软雅黑', 10), bg='#b4a7d6', fg='white', width=12, command=self.stop_timer, relief='flat', activebackground='#d9d2e9').pack(side=tk.LEFT, padx=6)
+
+        self.timer_label = tk.Label(left_frame, text='计时: 00:00:00', font=('微软雅黑', 16, 'bold'), fg='#3d85c6', bg='#f7f7f7')
         self.timer_label.pack(pady=12)
+
         # 右侧：统计
-        right_frame = tk.Frame(main_frame, highlightthickness=0)
-        right_frame.grid(row=0, column=1, sticky='nsew',
-                         padx=(10, 20), pady=10)
+        right_frame = tk.Frame(main_frame, highlightthickness=0, bg='#ffe4b2')
+        right_frame.grid(row=0, column=1, sticky='nsew', padx=(10, 20), pady=10)
         right_frame.grid_rowconfigure(1, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
-        stats_top = tk.Frame(right_frame)
-        stats_top.pack(anchor='n', pady=(0, 8))
-        tk.Label(stats_top, text='统计周期:', font=('微软雅黑', 11),
-                 fg='#333').pack(side=tk.LEFT, padx=8)
+        
+        settings_frame = tk.Frame(right_frame, bg='#ffe4b2')
+        settings_frame.pack(fill='x', pady=(5, 8))
+
+        # 统计周期选择
+        period_frame = tk.Frame(settings_frame, bg='#ffe4b2')
+        period_frame.pack(pady=2)
+        tk.Label(period_frame, text='统计周期:', font=('微软雅黑', 11), fg='#333', bg='#ffe4b2').pack(side=tk.LEFT, padx=8)
         for period, color in zip(['今日', '本周', '本月', '本年'], ['#f6b26b', '#6fa8dc', '#93c47d', '#e06666']):
-            tk.Button(stats_top, text=period, font=('微软雅黑', 10), bg=color, fg='white', width=8, command=lambda p=period: self.set_stats_period_and_update(
-                p, auto_update=True), relief='flat', activebackground='#ffe4b2').pack(side=tk.LEFT, padx=4)
-        self.stats_label = tk.Label(
-            stats_top, text=f'当前统计周期: {self.stats_period}', font=('微软雅黑', 10), fg='#666')
-        self.stats_label.pack(side=tk.LEFT, padx=10)
-        # 统计图显示区
-        self.stats_canvas = None
-        self.stats_fig = None
-        self.stats_canvas_frame = tk.Frame(right_frame)
+            tk.Button(period_frame, text=period, font=('微软雅黑', 10), bg=color, fg='white', width=8,
+                      command=lambda p=period: self.set_stats_period_and_update(p, auto_update=True),
+                      relief='flat', activebackground='#fff2ae').pack(side=tk.LEFT, padx=4)
+
+        # 图表类型选择
+        chart_type_frame = tk.Frame(settings_frame, bg='#ffe4b2')
+        chart_type_frame.pack(pady=2)
+        tk.Label(chart_type_frame, text='图表类型:', font=('微软雅黑', 11), fg='#333', bg='#ffe4b2').pack(side=tk.LEFT, padx=8)
+        ttk.Radiobutton(chart_type_frame, text='饼图', variable=self.chart_type_var, value='饼图', command=self.show_statistics).pack(side=tk.LEFT)
+        ttk.Radiobutton(chart_type_frame, text='折线图', variable=self.chart_type_var, value='折线图', command=self.show_statistics).pack(side=tk.LEFT, padx=10)
+
+        # 子周期选择器 (默认隐藏)
+        self.sub_period_frame = tk.Frame(settings_frame, bg='#ffe4b2')
+        tk.Label(self.sub_period_frame, text='粒度:', font=('微软雅黑', 10), fg='#333', bg='#ffe4b2').pack(side=tk.LEFT, padx=8)
+        self.sub_day_rb = ttk.Radiobutton(self.sub_period_frame, text='按天', variable=self.sub_period_var, value='按天', command=self.show_statistics)
+        self.sub_week_rb = ttk.Radiobutton(self.sub_period_frame, text='按周', variable=self.sub_period_var, value='按周', command=self.show_statistics)
+        self.sub_month_rb = ttk.Radiobutton(self.sub_period_frame, text='按月', variable=self.sub_period_var, value='按月', command=self.show_statistics)
+
+        self.stats_label = tk.Label(settings_frame, text=f'当前统计: {self.stats_period}', font=('微软雅黑', 10), fg='#666', bg='#ffe4b2')
+        self.stats_label.pack(pady=2)
+        
+        self.stats_canvas_frame = tk.Frame(right_frame, bg="#fffbe6")
         self.stats_canvas_frame.pack(fill='both', expand=True)
-        self.show_statistics()
+
+        self.set_stats_period_and_update(self.stats_period, auto_update=True)
 
     def refresh_task_list(self):
-        # Treeview无表头版本
         for i in self.task_tree.get_children():
             self.task_tree.delete(i)
-        n = len(self.tasks)
-        pastel = self.pastel_colors
-        while len(pastel) < n:
-            pastel = pastel * 2
+        
+        self.task_color_map = {}
+        n_colors = len(self.pastel_colors)
+        for i, task in enumerate(self.tasks):
+            self.task_color_map[task['name']] = self.pastel_colors[i % n_colors]
+
         for idx, task in enumerate(self.tasks):
             tag = f'taskcolor{idx}'
-            self.task_tree.insert('', 'end', text=task['name'], tags=(tag,))
-            self.task_tree.tag_configure(tag, background=pastel[idx])
+            color = self.task_color_map.get(task['name'])
+            self.task_tree.insert('', 'end', text=f" {task['name']}", tags=(tag,))
+            self.task_tree.tag_configure(tag, background=color)
 
     def add_task(self):
         name = simpledialog.askstring('添加任务', '请输入任务名称:')
         if name:
+            if any(t['name'] == name for t in self.tasks):
+                messagebox.showwarning('错误', '任务名称已存在！')
+                return
             self.tasks.append({'name': name, 'records': []})
             self.save_data()
             self.refresh_task_list()
+            self.show_statistics()
 
     def delete_task(self):
         idxs = self.task_tree.selection()
         if not idxs:
             messagebox.showwarning('提示', '请先选择要删除的任务')
             return
+        
         idx = self.task_tree.index(idxs[0])
         task_name = self.tasks[idx]['name']
+
         if not self.tasks[idx]['records']:
             if messagebox.askyesno('确认删除', f'确定要删除任务“{task_name}”？'):
                 del self.tasks[idx]
-                self.save_data()
-                self.refresh_task_list()
         else:
             res = messagebox.askyesnocancel(
                 '删除任务', f'是否同时删除该任务的所有计时记录？\n是：删除任务及记录\n否：仅删除任务，保留记录到新任务“{task_name}_记录”\n取消：不删除')
-            if res is None:
-                return
+            if res is None: return
             elif res:
                 del self.tasks[idx]
             else:
                 records = self.tasks[idx]['records']
                 del self.tasks[idx]
-                self.tasks.append(
-                    {'name': f'{task_name}_记录', 'records': records})
-            self.save_data()
-            self.refresh_task_list()
+                self.tasks.append({'name': f'{task_name}_记录', 'records': records})
+        
+        self.save_data()
+        self.refresh_task_list()
+        self.show_statistics()
 
     def start_timer(self):
         idxs = self.task_tree.selection()
@@ -219,6 +232,7 @@ class ClockToDoApp:
         if self.timer_running:
             messagebox.showinfo('提示', '已有计时在进行')
             return
+        
         self.current_task = self.task_tree.index(idxs[0])
         self.start_time = time.time()
         self.timer_running = True
@@ -235,6 +249,7 @@ class ClockToDoApp:
         if not self.timer_running:
             messagebox.showinfo('提示', '没有正在计时的任务')
             return
+        
         end_time = time.time()
         elapsed = int(end_time - self.start_time)
         record = {
@@ -247,15 +262,22 @@ class ClockToDoApp:
         self.timer_running = False
         self.timer_label.config(text='计时: 00:00:00')
         messagebox.showinfo('完成', f'本次计时：{elapsed//60}分{elapsed%60}秒')
+        self.show_statistics()
 
     def set_stats_period_and_update(self, period, auto_update=False):
         self.stats_period = period
-        self.stats_label.config(text=f'当前统计周期: {self.stats_period}')
+        
+        # **BUG修复**: 仅在切换主周期时设置默认子周期，而不是每次刷新都设置
+        if period == '本月':
+            self.sub_period_var.set('按天')
+        elif period == '本年':
+            self.sub_period_var.set('按月')
+        
         if auto_update:
             self.show_statistics()
 
     def on_calendar_select(self, event):
-        date_str = self.calendar.get_date()  # yyyy-mm-dd
+        date_str = self.calendar.get_date()
         self.selected_calendar_date = date_str
         self.show_statistics(force_day=date_str)
 
@@ -264,265 +286,285 @@ class ClockToDoApp:
         import matplotlib
         import matplotlib.pyplot as plt
         import numpy as np
-        matplotlib.rcParams['font.sans-serif'] = ['SimHei',
-                                                  'Microsoft YaHei', 'Arial Unicode MS', 'sans-serif']
+        
+        matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'sans-serif']
         matplotlib.rcParams['axes.unicode_minus'] = False
-        PERIODS = [
-            ('今日', 'day'),
-            ('本周', 'week'),
-            ('本月', 'month'),
-            ('本年', 'year')
-        ]
-
-        # 清理旧图表控件
+        
         for widget in self.stats_canvas_frame.winfo_children():
             widget.destroy()
 
-        self.stats_fig = plt.Figure(figsize=(5, 5), dpi=100)
-        ax = self.stats_fig.add_subplot(111)
-        period_map = dict(PERIODS)
-        period_type = period_map.get(self.stats_period, 'day')
-        now = datetime.now()
-        labels = []
-        values = []
+        # **BUG修复**: 将子周期选择器的UI更新逻辑移到这里
+        # 这样每次刷新都会根据当前状态决定是否显示，并且不会重置用户的选择
+        self.sub_period_frame.pack_forget()
+        self.sub_day_rb.pack_forget()
+        self.sub_week_rb.pack_forget()
+        self.sub_month_rb.pack_forget()
+        if self.chart_type_var.get() == '折线图' and not force_day:
+            if self.stats_period == '本月':
+                self.sub_period_frame.pack(pady=2)
+                self.sub_day_rb.pack(side=tk.LEFT)
+                self.sub_week_rb.pack(side=tk.LEFT, padx=10)
+            elif self.stats_period == '本年':
+                self.sub_period_frame.pack(pady=2)
+                self.sub_day_rb.pack(side=tk.LEFT)
+                self.sub_week_rb.pack(side=tk.LEFT, padx=10)
+                self.sub_month_rb.pack(side=tk.LEFT)
 
+        now = datetime.now()
+        filtered_records = []
         for task in self.tasks:
-            total = 0
             for rec in task.get('records', []):
                 try:
                     start = datetime.fromisoformat(str(rec['start']))
                     duration = int(float(rec['duration']))
-                except Exception:
+                except (ValueError, TypeError):
                     continue
-
+                
+                is_in_period = False
                 if force_day:
-                    if start.strftime('%Y-%m-%d') == force_day:
-                        total += duration
+                    if start.strftime('%Y-%m-%d') == force_day: is_in_period = True
                 else:
-                    if period_type == 'day' and start.date() == now.date():
-                        total += duration
-                    elif period_type == 'week' and start.isocalendar()[:2] == now.isocalendar()[:2]:
-                        total += duration
-                    elif period_type == 'month' and start.month == now.month and start.year == now.year:
-                        total += duration
-                    elif period_type == 'year' and start.year == now.year:
-                        total += duration
+                    period_type = {'今日': 'day', '本周': 'week', '本月': 'month', '本年': 'year'}.get(self.stats_period)
+                    if period_type == 'day' and start.date() == now.date(): is_in_period = True
+                    elif period_type == 'week' and start.isocalendar()[:2] == now.isocalendar()[:2]: is_in_period = True
+                    elif period_type == 'month' and start.month == now.month and start.year == now.year: is_in_period = True
+                    elif period_type == 'year' and start.year == now.year: is_in_period = True
+                
+                if is_in_period:
+                    filtered_records.append({'start': start, 'duration': duration, 'task_name': task['name']})
 
-            hours = round(total / 3600, 4)
-            if hours > 0:
-                labels.append(task['name'])
-                values.append(hours)
-
-        if all(v == 0 for v in values):
-            msg = f'{force_day} 暂无计时记录' if force_day else '该周期暂无计时记录'
-            tk.Label(self.stats_canvas_frame, text=msg,
-                     font=('微软雅黑', 12), fg='#e06666').pack()
+        if not filtered_records:
+            msg = f'{force_day} 暂无计时记录' if force_day else f'“{self.stats_period}”暂无计时记录'
+            tk.Label(self.stats_canvas_frame, text=msg, font=('微软雅黑', 16), fg='#e06666', bg='#fffbe6').pack(pady=50)
             return
 
-        self.stats_fig.subplots_adjust(top=0.85, bottom=0.08)
+        self.stats_fig = plt.Figure(figsize=(5, 5), dpi=100, facecolor='#fffbe6')
+        ax = self.stats_fig.add_subplot(111)
+        ax.set_facecolor('#fffbe6')
+        
+        chart_type = self.chart_type_var.get()
+        title_prefix = f'{force_day}' if force_day else f'{self.stats_period}'
 
-        # --- 颜色映射字典（任务名→颜色） ---
-        self.task_color_map = {}
-        n_colors = len(self.pastel_colors)
-        for i, task in enumerate(self.tasks):
-            self.task_color_map[task['name']
-                                ] = self.pastel_colors[i % n_colors]
+        # 传递 force_day=force_day
+        if chart_type == '饼图':
+            self.stats_label.config(text=f'当前统计: {title_prefix}')
+            self._draw_pie_chart(ax, filtered_records, title_prefix)
+        else: # 折线图
+            self._draw_line_chart(ax, filtered_records, title_prefix, force_day=force_day)
+        
+        self.stats_canvas = FigureCanvasTkAgg(self.stats_fig, master=self.stats_canvas_frame)
+        self.stats_canvas.draw()
+        self.stats_canvas.get_tk_widget().pack(fill='both', expand=True)
 
-        # 饼图颜色对应labels
-        pie_colors = [self.task_color_map.get(
-            name, '#cccccc') for name in labels]
+    def _draw_pie_chart(self, ax, records, title_prefix):
+        data = defaultdict(float)
+        for rec in records:
+            data[rec['task_name']] += rec['duration'] / 3600
+        
+        labels = list(data.keys())
+        values = list(data.values())
 
-        wedges, _ = ax.pie(
-            values,
-            labels=None,
-            startangle=90,
-            wedgeprops={'linewidth': 1, 'edgecolor': 'white'},
-            colors=pie_colors
-        )
-
-        import matplotlib.pyplot as plt
+        pie_colors = [self.task_color_map.get(name, '#cccccc') for name in labels]
+        wedges, _ = ax.pie(values, startangle=90, wedgeprops={'linewidth': 1, 'edgecolor': 'white'}, colors=pie_colors)
+        
+        import numpy as np
         for i, wedge in enumerate(wedges):
-            ang = (wedge.theta2 + wedge.theta1) / 2.
-            angle_span = wedge.theta2 - wedge.theta1
-            r = 0.6
-            x = r * np.cos(np.deg2rad(ang))
-            y = r * np.sin(np.deg2rad(ang))
-            if angle_span < 15:
-                continue
-            fontsize = int(8 + 4 * min(angle_span, 60) / 60)
-            display_ang = ang
-            if 90 < (ang % 360) < 270:
-                display_ang += 180
-            ax.text(
-                x, y, labels[i],
-                ha='center', va='center',
-                fontsize=fontsize, color='#333', fontweight='bold',
-                rotation=display_ang, rotation_mode='default'
-            )
-        sum_values=sum(values)
+             ang = (wedge.theta2 + wedge.theta1) / 2.
+             angle_span = wedge.theta2 - wedge.theta1
+             r = 0.6
+             x, y = r * np.cos(np.deg2rad(ang)), r * np.sin(np.deg2rad(ang))
+             if angle_span < 15: continue
+             fontsize = int(8 + 4 * min(angle_span, 60) / 60)
+             display_ang = ang if not (90 < (ang % 360) < 270) else ang + 180
+             ax.text(x, y, labels[i], ha='center', va='center', fontsize=fontsize, color='#333', fontweight='bold', rotation=display_ang, rotation_mode='default')
+
         for i, (wedge, value) in enumerate(zip(wedges, values)):
             ang = (wedge.theta2 + wedge.theta1) / 2.
             angle_span = wedge.theta2 - wedge.theta1
-            x = np.cos(np.deg2rad(ang))
-            y = np.sin(np.deg2rad(ang))
-            hours = int(value)
-            minutes = int(round((value - hours) * 60))
-            time_str = f"{hours}小时" + (f"{minutes}分钟" if minutes > 0 else "")
+            x, y = np.cos(np.deg2rad(ang)), np.sin(np.deg2rad(ang))
+            hours, minutes = int(value), int(round((value - int(value)) * 60))
+            time_str = f"{hours}h" + (f" {minutes}m" if minutes > 0 else "")
+            label = f"{labels[i]}\n{time_str}" if angle_span < 15 else time_str
+            ax.annotate(label, xy=(x, y), xytext=(1.35 * x, 1.10 * y), ha='center', va='center', fontsize=9,
+                        arrowprops=dict(arrowstyle='-', color='#888', lw=1, connectionstyle="angle3,angleA=0,angleB=90"),
+                        bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#ccc', lw=0.5, alpha=0.8))
 
-            if angle_span < 15:
-                label = f"{labels[i]} {time_str}"
-            else:
-                label = time_str
+        ax.set_title(f'{title_prefix} 各任务专注时间占比', fontsize=14, pad=20)
+        
+        self._draw_summary_tables(labels, values)
 
-            ax.annotate(
-                label,
-                xy=(x, y),
-                xytext=(1.35 * x, 1.10 * y + (0.18 if y > 0.2 else -0.18)),
-                ha='center', va='center',
-                fontsize=9,
-                arrowprops=dict(
-                    arrowstyle='-', color='#888', lw=1,
-                    connectionstyle="angle3,angleA=0,angleB=90"
-                ),
-                bbox=dict(boxstyle='round,pad=0.2', fc='white',
-                          ec='#ccc', lw=0.5, alpha=0.8)
-            )
-        sum_hours = int(sum_values)
-        sum_minutes = int(round((sum_values - sum_hours ) * 60))
-        sum_time_str = f"{sum_hours}小时" + (f"{sum_minutes}分钟" if sum_minutes > 0 else "")
-        ax.text(0, -1.45, f'累计专注时间：{sum_time_str}',
-                ha='center', va='center',
-                fontsize=12, color='#d35400', fontweight='bold')
-        title_text = f'{force_day} 各任务专注时间（小时）' if force_day else f'{self.stats_period}各任务累计专注时间（小时）'
-        ax.set_title(title_text, fontsize=14, pad=30)
+    def _draw_line_chart(self, ax, records, title_prefix, force_day=None):
+        data = defaultdict(float)
+        now = datetime.now()
+        sub_period_type = self.sub_period_var.get()
+        x_labels, y_values = [], []
+        title = f'{title_prefix} '
 
-        self.stats_canvas = FigureCanvasTkAgg(
-            self.stats_fig, master=self.stats_canvas_frame)
-        self.stats_canvas.draw()
-        self.stats_canvas.get_tk_widget().pack()
+        if self.stats_period == '今日' or force_day:
+            title += '各任务用时分布'
+            for rec in records:
+                data[rec['task_name']] += rec['duration'] / 3600
+            sorted_tasks = sorted(data.keys(), key=lambda t: list(self.task_color_map.keys()).index(t) if t in self.task_color_map else -1)
+            x_labels = sorted_tasks
+            y_values = [data[t] for t in x_labels]
+            colors = [self.task_color_map.get(t, '#cccccc') for t in x_labels]
+            bars = ax.bar(x_labels, y_values, color=colors)
+            plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+            # **功能增强**: 添加数据注释
+            for bar in bars:
+                yval = bar.get_height()
+                if yval > 0:
+                    ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f}h', va='bottom', ha='center', fontsize=9)
+        
+        else: # 非'今日'且非force_day的周期性图表
+            plot_color = '#6fa8dc' # 默认颜色
+            if self.stats_period == '本周':
+                title += '每日专注时长'
+                plot_color = '#6fa8dc'
+                start_of_week = now - timedelta(days=now.weekday())
+                for i in range(7): data[(start_of_week + timedelta(days=i)).strftime('%a(%d)')] = 0
+                for rec in records: data[rec['start'].strftime('%a(%d)')] += rec['duration'] / 3600
+            
+            elif self.stats_period == '本月':
+                plot_color = '#93c47d'
+                if sub_period_type == '按天':
+                    title += '每日专注时长 (按天)'
+                    days_in_month = (datetime(now.year, now.month + 1, 1) - timedelta(days=1)).day if now.month < 12 else 31
+                    for day in range(1, days_in_month + 1): data[day] = 0
+                    for rec in records: data[rec['start'].day] += rec['duration'] / 3600
+                elif sub_period_type == '按周':
+                    title += '每周专注时长'
+                    weeks_in_month = sorted(list(set(rec['start'].isocalendar()[1] for rec in records)))
+                    for week in weeks_in_month: data[f'W{week}'] = 0
+                    for rec in records: data[f'W{rec["start"].isocalendar()[1]}'] += rec['duration'] / 3600
+            
+            elif self.stats_period == '本年':
+                plot_color = '#e06666'
+                if sub_period_type == '按月':
+                    title += '每月专注时长'
+                    for month in range(1, 13): data[datetime(now.year, month, 1).strftime('%b')] = 0
+                    for rec in records: data[rec['start'].strftime('%b')] += rec['duration'] / 3600
+                elif sub_period_type == '按周':
+                    title += '每周专注时长'
+                    for week in range(1, 54): data[week] = 0
+                    for rec in records: data[rec['start'].isocalendar()[1]] += rec['duration'] / 3600
+                    data = {f'W{k}':v for k,v in data.items() if v > 0}
+                elif sub_period_type == '按天':
+                    title += '每日专注时长'
+                    for rec in records: data[rec['start'].strftime('%m-%d')] += rec['duration'] / 3600
+                    data = {k:v for k,v in sorted(data.items())}
 
-        # --- 统计表（示例为两个表格，带滚动条，3行可视） ---
-        import tkinter.ttk as ttk
+            x_labels = list(data.keys())
+            y_values = list(data.values())
+            ax.plot(x_labels, y_values, marker='o', linestyle='-', color=plot_color)
+            
+            # **功能增强**: 添加数据注释
+            for x, y in zip(x_labels, y_values):
+                if y > 0:
+                    ax.text(x, y, f' {y:.2f}h', va='bottom', ha='left' if str(x)[0] != 'W' else 'center', fontsize=9)
+            
+            if self.stats_period == '本年' and sub_period_type == '按天':
+                ax.xaxis.set_major_locator(plt.MaxNLocator(8))
+                plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        
+        ax.set_title(title, fontsize=14, pad=20)
+        ax.set_ylabel('时长 (小时)')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        self.stats_fig.tight_layout(pad=2.0)
+        self.stats_label.config(text=f'当前图表: {title.replace(" ", "")}')
+
+    def _draw_summary_tables(self, labels, values):
         style = ttk.Style()
         style.theme_use('default')
         main_bg = '#fffbe6'
-        style.configure('Custom.Treeview',
-                        background=main_bg,
-                        fieldbackground=main_bg,
-                        borderwidth=0,
-                        relief='flat',
-                        rowheight=28,
-                        font=('微软雅黑', 11),
-                        )
-        style.configure('Custom.Treeview.Heading',
-                        background='#fffbe6',
-                        foreground='#d35400',
-                        font=('微软雅黑', 11, 'bold'),
-                        borderwidth=0,
-                        relief='flat',
-                        )
+        style.configure('Custom.Treeview', background=main_bg, fieldbackground=main_bg, borderwidth=0, relief='flat', rowheight=28, font=('微软雅黑', 11))
+        style.configure('Custom.Treeview.Heading', background='#fff2cc', foreground='#d35400', font=('微软雅黑', 11, 'bold'), borderwidth=0, relief='flat')
         style.map('Custom.Treeview', background=[], foreground=[])
+        
+        table_frame = tk.Frame(self.stats_canvas_frame, bg=main_bg)
+        table_frame.pack(side=tk.BOTTOM, fill='x', pady=(10, 0), padx=10)
 
-        # 清理旧表格和滚动条（避免重复创建）
-        for attr in ['stats_table_left', 'stats_table_right', 'scrollbar_left', 'scrollbar_right']:
-            if hasattr(self, attr) and getattr(self, attr):
-                getattr(self, attr).destroy()
+        mid_index = (len(labels) + 1) // 2
+        left_data = list(zip(labels[:mid_index], values[:mid_index]))
+        right_data = list(zip(labels[mid_index:], values[mid_index:]))
+        
+        self._create_table_in_frame(table_frame, left_data, 'left')
+        if right_data:
+            self._create_table_in_frame(table_frame, right_data, 'right')
 
-        table_frame = tk.Frame(self.stats_canvas_frame)
-        table_frame.pack(side=tk.BOTTOM, fill='x', pady=(10, 0))
-
-        # 左侧框架
-        left_frame = tk.Frame(table_frame)
-        left_frame.pack(side=tk.LEFT, fill='y', expand=True, padx=(0, 10))
-        self.stats_table_left = ttk.Treeview(
-            left_frame,
-            columns=('计划', '累计小时'),
-            show='headings',
-            height=3,
-            style='Custom.Treeview',
-            selectmode='none'
+    def _create_table_in_frame(self, parent_frame, data, side):
+        frame = tk.Frame(parent_frame, bg='#fffbe6')
+        frame.pack(side=tk.LEFT if side == 'left' else tk.RIGHT, fill='x', expand=True, padx=(0, 5 if side == 'left' else 0))
+        
+        table = ttk.Treeview(
+            frame, columns=('计划', '累计时长'), show='headings',
+            height= 3,
+            style='Custom.Treeview', selectmode='none'
         )
-        self.stats_table_left.heading('计划', text='计划')
-        self.stats_table_left.heading('累计小时', text='累计小时')
-        self.stats_table_left.column('计划', width=150, anchor='center')
-        self.stats_table_left.column('累计小时', width=100, anchor='center')
-        self.stats_table_left.pack(side=tk.LEFT, fill='both', expand=True)
+        table.heading('计划', text='计划')
+        table.heading('累计时长', text='累计时长')
+        table.column('计划', width=120, anchor='center')
+        table.column('累计时长', width=100, anchor='center')
+        table.pack(side=tk.LEFT, fill='both', expand=True)
 
-        # 右侧框架
-        right_frame = tk.Frame(table_frame)
-        right_frame.pack(side=tk.LEFT, fill='y', expand=True)
-        self.stats_table_right = ttk.Treeview(
-            right_frame,
-            columns=('计划', '累计小时'),
-            show='headings',
-            height=3,
-            style='Custom.Treeview',
-            selectmode='none'
-        )
-        self.stats_table_right.heading('计划', text='计划')
-        self.stats_table_right.heading('累计小时', text='累计小时')
-        self.stats_table_right.column('计划', width=150, anchor='center')
-        self.stats_table_right.column('累计小时', width=100, anchor='center')
-        self.stats_table_right.pack(side=tk.LEFT, fill='both', expand=True)
-
-        # 任务索引分配
-        left_indices = [i for i in range(len(labels)) if i % 2 == 0]
-        right_indices = [i for i in range(len(labels)) if i % 2 == 1]
-
-        # 插入左表数据，颜色对应
-        for i in left_indices:
-            tag = f'rowcolor_left_{i}'
-            color = self.task_color_map.get(labels[i], '#cccccc')
-
-            hours = int(values[i])
-            minutes = int(round((values[i] - hours) * 60))
-            time_str = f"{hours}小时" + (f"{minutes}分钟" if minutes > 0 else "")
-
-            self.stats_table_left.insert(
-                '', 'end', values=(labels[i], time_str), tags=(tag,))
-            self.stats_table_left.tag_configure(tag, background=color)
-
-        # 插入右表数据，颜色对应
-        for i in right_indices:
-            tag = f'rowcolor_right_{i}'
-            color = self.task_color_map.get(labels[i], '#cccccc')
-
-            hours = int(values[i])
-            minutes = int(round((values[i] - hours) * 60))
-            time_str = f"{hours}小时" + (f"{minutes}分钟" if minutes > 0 else "")
-
-            self.stats_table_right.insert(
-                '', 'end', values=(labels[i], time_str), tags=(tag,))
-            self.stats_table_right.tag_configure(tag, background=color)
+        for label, value in data:
+            tag = f'rowcolor_{label.replace(" ", "_")}'
+            color = self.task_color_map.get(label, '#cccccc')
+            hours, minutes = int(value), int(round((value - int(value)) * 60))
+            time_str = f"{hours}h" + (f" {minutes}m" if minutes > 0 else "")
+            table.insert('', 'end', values=(label, time_str), tags=(tag,))
+            table.tag_configure(tag, background=color)
 
     def save_data(self):
         try:
-            # 序列化任务数据为 JSON 字符串
-            json_str = json.dumps(self.tasks, ensure_ascii=False, separators=(',', ':'))
+            compressed_file, json_file = self.get_file_pair(DATA_FILE)
+            json_str = json.dumps(self.tasks, ensure_ascii=False, indent=2)
+            data = json_str.encode('utf-8')
 
-            # 只保存为未压缩 JSON 文件
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                f.write(json_str)
+            cctx = zstd.ZstdCompressor()
+            compressed = cctx.compress(data)
+            with open(compressed_file, 'wb') as f: f.write(compressed)
+            with open(json_file, 'w', encoding='utf-8') as f: f.write(json_str)
 
         except Exception as e:
             messagebox.showerror('保存错误', f'保存数据失败：{e}')
 
-
     def load_data(self):
-        if os.path.exists(DATA_FILE):
+        compressed_file, json_file = self.get_file_pair(DATA_FILE)
+        loaded = False
+        if os.path.exists(compressed_file):
             try:
-                with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    self.tasks = json.load(f)
-                return
+                dctx = zstd.ZstdDecompressor()
+                with open(compressed_file, 'rb') as f:
+                    decompressed = dctx.decompress(f.read())
+                    self.tasks = json.loads(decompressed.decode('utf-8'))
+                loaded = True
             except Exception as e:
-                messagebox.showerror('读取错误', f'读取数据失败：{e}')
-        self.tasks = []
+                messagebox.showwarning('读取警告', f'读取压缩数据失败：{e}\n尝试读取未压缩数据...')
+        
+        if not loaded and os.path.exists(json_file):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    self.tasks = json.load(f)
+                self.save_data()
+            except Exception as e:
+                messagebox.showerror('读取错误', f'读取原始数据失败：{e}')
+                self.tasks = []
+        else:
+             if not loaded: self.tasks = []
+    
+    def get_file_pair(self, file_path):
+        if file_path.endswith('.zst'):
+            return file_path, file_path[:-4]
+        elif file_path.endswith('.json'):
+            return file_path + '.zst', file_path
+        else:
+            raise ValueError("Unsupported file extension. Use .json or .json.zst")
 
 def main():
     root = tk.Tk()
     app = ClockToDoApp(root)
     root.mainloop()
-
 
 if __name__ == '__main__':
     main()
