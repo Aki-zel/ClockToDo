@@ -7,10 +7,9 @@ import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 from matplotlib import pyplot as plt
-import zstandard as zstd
 import tkinter.ttk as ttk # 统一导入ttk
 
-DATA_FILE = 'todo.json.zst'
+DATA_FILE = 'todo.json'
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
@@ -517,49 +516,26 @@ class ClockToDoApp:
 
     def save_data(self):
         try:
-            compressed_file, json_file = self.get_file_pair(DATA_FILE)
-            json_str = json.dumps(self.tasks, ensure_ascii=False, indent=2)
-            data = json_str.encode('utf-8')
-
-            cctx = zstd.ZstdCompressor()
-            compressed = cctx.compress(data)
-            with open(compressed_file, 'wb') as f: f.write(compressed)
-            with open(json_file, 'w', encoding='utf-8') as f: f.write(json_str)
-
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.tasks, f, ensure_ascii=False, indent=2)
         except Exception as e:
             messagebox.showerror('保存错误', f'保存数据失败：{e}')
 
+    # **改动**: 简化 load_data
     def load_data(self):
-        compressed_file, json_file = self.get_file_pair(DATA_FILE)
-        loaded = False
-        if os.path.exists(compressed_file):
+        if os.path.exists(DATA_FILE):
             try:
-                dctx = zstd.ZstdDecompressor()
-                with open(compressed_file, 'rb') as f:
-                    decompressed = dctx.decompress(f.read())
-                    self.tasks = json.loads(decompressed.decode('utf-8'))
-                loaded = True
-            except Exception as e:
-                messagebox.showwarning('读取警告', f'读取压缩数据失败：{e}\n尝试读取未压缩数据...')
-        
-        if not loaded and os.path.exists(json_file):
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
+                with open(DATA_FILE, 'r', encoding='utf-8') as f:
                     self.tasks = json.load(f)
-                self.save_data()
-            except Exception as e:
-                messagebox.showerror('读取错误', f'读取原始数据失败：{e}')
+            except (json.JSONDecodeError, TypeError) as e:
+                messagebox.showerror('读取错误', f'读取数据文件失败，文件可能已损坏：{e}')
                 self.tasks = []
+            except Exception as e:
+                 messagebox.showerror('读取错误', f'读取数据时发生未知错误：{e}')
+                 self.tasks = []
         else:
-             if not loaded: self.tasks = []
-    
-    def get_file_pair(self, file_path):
-        if file_path.endswith('.zst'):
-            return file_path, file_path[:-4]
-        elif file_path.endswith('.json'):
-            return file_path + '.zst', file_path
-        else:
-            raise ValueError("Unsupported file extension. Use .json or .json.zst")
+            # 如果文件不存在，则初始化为空列表
+            self.tasks = []
 
 def main():
     root = tk.Tk()
