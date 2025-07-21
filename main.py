@@ -107,14 +107,14 @@ class ClockToDoApp:
         task_style.theme_use('default')
         task_style.configure('Task.Treeview', background='#fdf6e3', fieldbackground='#fdf6e3',
                              borderwidth=0, relief='flat', rowheight=28, font=('微软雅黑', 12))
-        task_style.map('Task.Treeview', background=[('selected', "#d35400")], foreground=[('selected', "#ffffff")])
+        task_style.map('Task.Treeview', background=[('selected', "#000000")], foreground=[('selected', "#ffffff")])
         self.task_tree_frame = tk.Frame(left_frame, bg='#fdf6e3', highlightthickness=0, bd=0)
         self.task_tree_frame.pack(pady=4, fill='x')
         self.task_tree = ttk.Treeview(
             self.task_tree_frame, columns=(), show='tree', height=10,
             style='Task.Treeview', selectmode='browse'
         )
-        self.task_tree.column('#0', anchor='w', width=220, stretch=True)
+        self.task_tree.column('#0', anchor='center', width=220, stretch=True)
         self.task_tree.pack(fill='x', expand=True, padx=5, pady=5)
         self.refresh_task_list()
         
