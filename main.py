@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 import tkinter.ttk as ttk # 统一导入ttk
 
 # 数据文件路径
-DATA_FILE = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'ClockToDo', 'todo.json')
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'todo.json')
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
@@ -572,6 +572,40 @@ class ClockToDoApp:
         if os.path.exists(DATA_FILE):
             if not self.verify_data_file():
                 messagebox.showerror('错误', '数据文件可能已损坏或被篡改')
+                self.tasks = []
+                return
+                
+            try:
+                with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # 加载任务列表
+                self.tasks = []
+                for task in data.get('tasks', []):
+                    self.tasks.append({
+                        'name': task['name'],
+                        'records': []
+                    })
+                    
+                # 加载每日记录
+                for date, records in data.get('daily_records', {}).items():
+                    for record in records:
+                        # 找到对应任务并添加记录
+                        for task in self.tasks:
+                            if task['name'] == record['task']:
+                                # 转换时间格式
+                                date_str = date
+                                start_time = datetime.strptime(f"{date_str} {record['start']}", "%Y-%m-%d %H:%M:%S")
+                                end_time = datetime.strptime(f"{date_str} {record['end']}", "%Y-%m-%d %H:%M:%S")
+                                
+                                task['records'].append({
+                                    'start': start_time.isoformat(),
+                                    'end': end_time.isoformat(),
+                                    'duration': record['duration']
+                                })
+                                break
+            except Exception as e:
+                messagebox.showerror('错误', f'加载数据文件时出错: {str(e)}')
                 self.tasks = []
                 return
                 
