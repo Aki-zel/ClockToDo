@@ -9,7 +9,8 @@ from collections import defaultdict
 from matplotlib import pyplot as plt
 import tkinter.ttk as ttk # 统一导入ttk
 
-DATA_FILE = 'todo.json'
+# 数据文件路径
+DATA_FILE = os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'ClockToDo', 'todo.json')
 
 # 全局统一 pastel_colors
 PASTEL_COLORS = [
@@ -516,6 +517,22 @@ class ClockToDoApp:
             table.insert('', 'end', values=(label, time_str), tags=(tag,))
             table.tag_configure(tag, background=color)
 
+    def verify_data_file(self):
+        """验证数据文件的完整性和安全性"""
+        if not os.path.exists(DATA_FILE):
+            return True
+            
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    return False
+                if "tasks" not in data or "daily_records" not in data:
+                    return False
+                return True
+        except Exception:
+            return False
+
     def save_data(self):
         try:
             # 重构为按天记录的格式
@@ -549,7 +566,15 @@ class ClockToDoApp:
             messagebox.showerror('保存错误', f'保存数据失败：{e}')
 
     def load_data(self):
+        # 确保数据目录存在
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+        
         if os.path.exists(DATA_FILE):
+            if not self.verify_data_file():
+                messagebox.showerror('错误', '数据文件可能已损坏或被篡改')
+                self.tasks = []
+                return
+                
             try:
                 with open(DATA_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
