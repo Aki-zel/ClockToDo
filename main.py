@@ -518,26 +518,77 @@ class ClockToDoApp:
 
     def save_data(self):
         try:
+            # 重构为按天记录的格式
+            daily_records = {}
+            task_list = []
+            
+            # 收集所有任务名称
+            for task in self.tasks:
+                task_list.append({"name": task["name"]})
+                for record in task.get("records", []):
+                    date = datetime.fromisoformat(record["start"]).strftime("%Y-%m-%d")
+                    if date not in daily_records:
+                        daily_records[date] = []
+                        
+                    daily_records[date].append({
+                        "task": task["name"],
+                        "start": datetime.fromisoformat(record["start"]).strftime("%H:%M:%S"),
+                        "end": datetime.fromisoformat(record["end"]).strftime("%H:%M:%S"),
+                        "duration": record["duration"]
+                    })
+            
+            # 按日期排序
+            sorted_data = {
+                "tasks": task_list,
+                "daily_records": dict(sorted(daily_records.items(), reverse=True))
+            }
+            
             with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.tasks, f, ensure_ascii=False, indent=2)
+                json.dump(sorted_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             messagebox.showerror('保存错误', f'保存数据失败：{e}')
 
-    # **改动**: 简化 load_data
     def load_data(self):
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    self.tasks = json.load(f)
+                    data = json.load(f)
+                
+                # 初始化任务列表
+                self.tasks = []
+                task_dict = {}
+                
+                # 创建任务
+                for task in data.get("tasks", []):
+                    task_dict[task["name"]] = {"name": task["name"], "records": []}
+                    self.tasks.append(task_dict[task["name"]])
+                
+                # 加载每日记录
+                for date, records in data.get("daily_records", {}).items():
+                    for record in records:
+                        task_name = record["task"]
+                        if task_name in task_dict:
+                            # 转换回程序内部格式
+                            start_time = f"{date}T{record['start']}"
+                            end_time = f"{date}T{record['end']}"
+                            
+                            task_dict[task_name]["records"].append({
+                                "start": start_time,
+                                "end": end_time,
+                                "duration": record["duration"]
+                            })
+                            
             except (json.JSONDecodeError, TypeError) as e:
                 messagebox.showerror('读取错误', f'读取数据文件失败，文件可能已损坏：{e}')
                 self.tasks = []
             except Exception as e:
-                 messagebox.showerror('读取错误', f'读取数据时发生未知错误：{e}')
-                 self.tasks = []
+                messagebox.showerror('读取错误', f'读取数据时发生未知错误：{e}')
+                self.tasks = []
         else:
             # 如果文件不存在，则初始化为空列表
             self.tasks = []
+
+
 
 def main():
     root = tk.Tk()
